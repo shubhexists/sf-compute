@@ -1,6 +1,7 @@
-### NOTES 
+### NOTES
 - This does not take into account the using queues and there are no concurrent users, however state is managed through redis. (To start this, start a local redis or enter a hosted Redis url)
-
+- BUY Price and SELL Price can be an `Option<f64>` and then the auto price determination logic would come
+- Storing values in f64 decimals might have precision issues. We can store them in a very large quantity probably? ( Like SOLANA does with lamports )   
 
 ## EQUAL BUY SELL QUANTITY
 

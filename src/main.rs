@@ -14,16 +14,21 @@ struct CLI {
 enum Commands {
     Buy {
         #[clap(long, short)]
+        /// Price to Buy 
         price: f64,
         #[clap(long, short)]
+        /// Quantity to Buy
         quantity: u64,
         #[clap(long, short)]
+        /// Cluster Size (Although this should be auto determined)
         cluster_size: u64,
     },
     Sell {
         #[clap(long, short)]
+        /// Price to Sell
         price: f64,
         #[clap(long, short)]
+        /// Quantity to Sell
         quantity: u64,
         #[clap(long, short)]
         cluster_size: u64,

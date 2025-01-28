@@ -6,12 +6,21 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize)]
+/// OrderBook struct
+/// bids stores buy orders
+/// asks stores sell orders
+///
+/// The structure of the OrderBook is as follows:
+/// "PRICE" -> "CLUSTER_SIZE" -> [Order1, Order2, ...]
+///
+/// THERE IS NESTED BINARY TREE MAPS AS IT PROVIDES O(log n) TIME COMPLEXITY FOR INSERTION AND DELETION, PREVENTS LOOPING THROUGH THE ENTIRE ORDERBOOK
 pub struct OrderBook {
     pub bids: BTreeMap<OrderedFloat<f64>, BTreeMap<u64, Vec<Order>>>,
     pub asks: BTreeMap<OrderedFloat<f64>, BTreeMap<u64, Vec<Order>>>,
 }
 
 impl OrderBook {
+    /// READS ORDERBOOK FROM REDIS and parses it into OrderBook struct
     pub fn load_from_redis(conn: &mut Connection) -> Self {
         let bids: String = conn
             .get("orderbook_bids")
@@ -28,6 +37,7 @@ impl OrderBook {
         Self { bids, asks }
     }
 
+    /// SAVES ORDERBOOK TO REDIS
     pub fn save_to_redis(&self, conn: &mut Connection) {
         let bids = serde_json::to_string(&self.bids).unwrap();
         let asks = serde_json::to_string(&self.asks).unwrap();
@@ -36,6 +46,7 @@ impl OrderBook {
         let _: () = conn.set("orderbook_asks", asks).unwrap();
     }
 
+    /// Adds an order to the OrderBook
     pub fn add_order(&mut self, order: Order) -> Option<Order> {
         let target_book = if order.is_buy {
             &mut self.bids
@@ -51,6 +62,7 @@ impl OrderBook {
         None
     }
 
+    /// Matches an incoming order with an existing order in the OrderBook
     pub fn match_order(&mut self, incoming_order: Order) -> Option<Order> {
         let (target_book, incoming_is_buy) = if incoming_order.is_buy {
             (&mut self.asks, true)
@@ -116,6 +128,7 @@ impl OrderBook {
         None
     }
 
+    /// Prints the OrderBook
     pub fn view_orders(&self) {
         println!("\nOrder Book Status:");
         println!("----------------");
