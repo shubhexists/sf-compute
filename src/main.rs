@@ -12,9 +12,15 @@ struct CLI {
 
 #[derive(Subcommand)]
 enum Commands {
-    Place {
+    Buy {
         #[clap(long, short)]
-        is_buy: bool,
+        price: f64,
+        #[clap(long, short)]
+        quantity: u64,
+        #[clap(long, short)]
+        cluster_size: u64,
+    },
+    Sell {
         #[clap(long, short)]
         price: f64,
         #[clap(long, short)]
@@ -36,18 +42,41 @@ fn main() {
             let mut order_book = OrderBook::load_from_redis(&mut conn);
 
             match args.command {
-                Commands::Place {
-                    is_buy,
+                Commands::Buy {
                     price,
                     quantity,
                     cluster_size,
                 } => {
                     println!(
-                        "Placing order: is_buy: {}, price: {}, quantity: {}, cluster_size: {}",
-                        is_buy, price, quantity, cluster_size
+                        "Placing Buy order: price: {}, quantity: {}, cluster_size: {}",
+                        price, quantity, cluster_size
                     );
 
-                    let order = Order::new(0, is_buy, price, quantity, cluster_size);
+                    let order = Order::new(0, true, price, quantity, cluster_size);
+                    match order_book.match_order(order.clone()) {
+                        Some(matched_order) => {
+                            println!("Matched order: {:?}", matched_order);
+                        }
+                        None => {
+                            order_book.add_order(order);
+                        }
+                    }
+
+                    order_book.save_to_redis(&mut conn);
+                    println!("Order book saved to Redis");
+                }
+
+                Commands::Sell {
+                    price,
+                    quantity,
+                    cluster_size,
+                } => {
+                    println!(
+                        "Placing Sell order: price: {}, quantity: {}, cluster_size: {}",
+                        price, quantity, cluster_size
+                    );
+
+                    let order = Order::new(0, false, price, quantity, cluster_size);
                     match order_book.match_order(order.clone()) {
                         Some(matched_order) => {
                             println!("Matched order: {:?}", matched_order);

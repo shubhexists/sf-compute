@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 
 #[derive(Serialize, Deserialize)]
 pub struct OrderBook {
-    pub bids: BTreeMap<OrderedFloat<f64>, Vec<Order>>,
-    pub asks: BTreeMap<OrderedFloat<f64>, Vec<Order>>,
+    pub bids: BTreeMap<OrderedFloat<f64>, BTreeMap<u64, Vec<Order>>>,
+    pub asks: BTreeMap<OrderedFloat<f64>, BTreeMap<u64, Vec<Order>>>,
 }
 
 impl OrderBook {
@@ -20,9 +20,9 @@ impl OrderBook {
             .get("orderbook_asks")
             .unwrap_or_else(|_| "[]".to_string());
 
-        let bids: BTreeMap<OrderedFloat<f64>, Vec<Order>> =
+        let bids: BTreeMap<OrderedFloat<f64>, BTreeMap<u64, Vec<Order>>> =
             serde_json::from_str(&bids).unwrap_or_default();
-        let asks: BTreeMap<OrderedFloat<f64>, Vec<Order>> =
+        let asks: BTreeMap<OrderedFloat<f64>, BTreeMap<u64, Vec<Order>>> =
             serde_json::from_str(&asks).unwrap_or_default();
 
         Self { bids, asks }
@@ -43,10 +43,10 @@ impl OrderBook {
             &mut self.asks
         };
 
-        target_book
-            .entry(OrderedFloat(order.price))
-            .or_default()
-            .push(order);
+        let cluster_map = target_book.entry(OrderedFloat(order.price)).or_default();
+        let orders = cluster_map.entry(order.cluster_size).or_default();
+
+        orders.push(order);
 
         None
     }
@@ -58,30 +58,34 @@ impl OrderBook {
             (&mut self.bids, false)
         };
 
-        let mut matched_price = None;
-        let mut matched_index = None;
+        let mut best_match: Option<(OrderedFloat<f64>, u64, usize)> = None;
+        let mut best_price_value = if incoming_is_buy { f64::MAX } else { f64::MIN };
 
-        for (&price, orders) in target_book.iter() {
+        for (&price, cluster_map) in target_book.iter() {
             if (incoming_is_buy && price > OrderedFloat(incoming_order.price))
                 || (!incoming_is_buy && price < OrderedFloat(incoming_order.price))
             {
                 break;
             }
 
-            if let Some(pos) = orders
-                .iter()
-                .position(|o| o.cluster_size >= incoming_order.quantity)
+            if let Some((&cluster_size, orders)) =
+                cluster_map.range(incoming_order.quantity..).next()
             {
-                matched_price = Some(price);
-                matched_index = Some(pos);
-                break;
+                if !orders.is_empty()
+                    && ((incoming_is_buy && price.0 < best_price_value)
+                        || (!incoming_is_buy && price.0 > best_price_value))
+                {
+                    best_match = Some((price, cluster_size, 0));
+                    best_price_value = price.0;
+                }
             }
         }
 
-        if let (Some(price), Some(pos)) = (matched_price, matched_index) {
+        if let Some((price, cluster_size, index)) = best_match {
             let matched_order = {
-                let orders = target_book.get_mut(&price).unwrap();
-                let matched_order = &mut orders[pos];
+                let cluster_map = target_book.get_mut(&price).unwrap();
+                let orders = cluster_map.get_mut(&cluster_size).unwrap();
+                let matched_order = &mut orders[index];
 
                 matched_order.quantity -= incoming_order.quantity;
 
@@ -90,16 +94,19 @@ impl OrderBook {
                     is_buy: matched_order.is_buy,
                     price: matched_order.price,
                     quantity: incoming_order.quantity,
-                    cluster_size: incoming_order.cluster_size,
+                    cluster_size: matched_order.cluster_size,
                 }
             };
 
-            if let Some(orders) = target_book.get_mut(&price) {
-                if orders[pos].quantity == 0 {
-                    orders.remove(pos);
-                }
+            let cluster_map = target_book.get_mut(&price).unwrap();
+            let orders = cluster_map.get_mut(&cluster_size).unwrap();
+            if orders[index].quantity == 0 {
+                orders.remove(index);
                 if orders.is_empty() {
-                    target_book.remove(&price);
+                    cluster_map.remove(&cluster_size);
+                    if cluster_map.is_empty() {
+                        target_book.remove(&price);
+                    }
                 }
             }
 
@@ -110,23 +117,31 @@ impl OrderBook {
     }
 
     pub fn view_orders(&self) {
-        println!("Bids:");
-        for (price, orders) in self.bids.iter() {
-            for order in orders {
-                println!(
-                    "id: {}, is_buy: {}, price: {}, quantity: {}, cluster_size: {}",
-                    order.id, order.is_buy, price, order.quantity, order.cluster_size
-                );
+        println!("\nOrder Book Status:");
+        println!("----------------");
+        println!("\nBids (Buy Orders):");
+        for (price, cluster_map) in self.bids.iter().rev() {
+            println!("\nPrice Level: {}", price);
+            for (cluster_size, orders) in cluster_map.iter() {
+                println!("  Cluster Size {}: {} orders", cluster_size, orders.len());
+                for order in orders {
+                    println!("    Order ID: {}", order.id);
+                    println!("      Quantity: {}", order.quantity);
+                    println!("      Is Buy: {}", order.is_buy);
+                }
             }
         }
 
-        println!("Asks:");
-        for (price, orders) in self.asks.iter() {
-            for order in orders {
-                println!(
-                    "id: {}, is_buy: {}, price: {}, quantity: {}, cluster_size: {}",
-                    order.id, order.is_buy, price, order.quantity, order.cluster_size
-                );
+        println!("\nAsks (Sell Orders):");
+        for (price, cluster_map) in self.asks.iter() {
+            println!("\nPrice Level: {}", price);
+            for (cluster_size, orders) in cluster_map.iter() {
+                println!("  Cluster Size {}: {} orders", cluster_size, orders.len());
+                for order in orders {
+                    println!("    Order ID: {}", order.id);
+                    println!("      Quantity: {}", order.quantity);
+                    println!("      Is Buy: {}", order.is_buy);
+                }
             }
         }
     }
