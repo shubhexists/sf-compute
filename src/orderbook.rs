@@ -58,9 +58,8 @@ impl OrderBook {
             (&mut self.bids, false)
         };
 
-        let mut best_price = None;
-        let mut best_index = None;
-        let mut best_price_value = if incoming_is_buy { f64::MAX } else { f64::MIN };
+        let mut matched_price = None;
+        let mut matched_index = None;
 
         for (&price, orders) in target_book.iter() {
             if (incoming_is_buy && price > OrderedFloat(incoming_order.price))
@@ -71,19 +70,15 @@ impl OrderBook {
 
             if let Some(pos) = orders
                 .iter()
-                .position(|o| o.cluster_size >= incoming_order.cluster_size)
+                .position(|o| o.cluster_size >= incoming_order.quantity)
             {
-                if (incoming_is_buy && price.0 < best_price_value)
-                    || (!incoming_is_buy && price.0 > best_price_value)
-                {
-                    best_price = Some(price);
-                    best_index = Some(pos);
-                    best_price_value = price.0;
-                }
+                matched_price = Some(price);
+                matched_index = Some(pos);
+                break;
             }
         }
 
-        if let (Some(price), Some(pos)) = (best_price, best_index) {
+        if let (Some(price), Some(pos)) = (matched_price, matched_index) {
             let matched_order = {
                 let orders = target_book.get_mut(&price).unwrap();
                 let matched_order = &mut orders[pos];
